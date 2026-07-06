@@ -7,12 +7,9 @@ import logging
 import sys
 import time
 
-from LeakGuard.google_search import search_google
-from LeakGuard.github_search import search_github
 from LeakGuard.email_leak import check_one_email, batch_process_emails_for
 from LeakGuard.pass_leak import check_pass_leak, batch_check_pass_leak
 from LeakGuard.utils import set_sensitiveWords, set_blacklistUsers, read_file
-from LeakGuard.hunter_search import search_hunter
 
 
 class TextRedirector:
@@ -121,9 +118,6 @@ class LeakGuardGUI:
         nav_items = [
             ("email", "📧  邮箱检测"),
             ("password", "🔐  密码检测"),
-            ("google", "🔍  Google搜索"),
-            ("github", "🐙  GitHub搜索"),
-            ("hunter", "🌐  Hunter搜索"),
         ]
 
         for key, label in nav_items:
@@ -170,9 +164,6 @@ class LeakGuardGUI:
 
         self.content_frames["email"] = self.build_email_frame(parent)
         self.content_frames["password"] = self.build_password_frame(parent)
-        self.content_frames["google"] = self.build_google_frame(parent)
-        self.content_frames["github"] = self.build_github_frame(parent)
-        self.content_frames["hunter"] = self.build_hunter_frame(parent)
         self.content_frames["settings"] = self.build_settings_frame(parent)
 
         for k, frame in self.content_frames.items():
@@ -550,27 +541,7 @@ class LeakGuardGUI:
 
             executed = False
 
-            if self.current_tab == "github":
-                if self.github_mode.get() == "single" and self.github_query_entry.get():
-                    self.logger.info("执行 GitHub 搜索...")
-                    search_github(query=self.github_query_entry.get(), output_file=output_file, mode=mode)
-                    executed = True
-                elif self.github_mode.get() == "batch" and self.github_file_entry.get():
-                    self.logger.info("执行 GitHub 批量搜索...")
-                    search_github(file=self.github_file_entry.get(), output_file=output_file, mode=mode)
-                    executed = True
-
-            elif self.current_tab == "google":
-                if self.google_mode.get() == "single" and self.google_suffix_entry.get():
-                    self.logger.info("执行 Google 搜索...")
-                    search_google(email_suffix=self.google_suffix_entry.get(), output_file=output_file, mode=mode)
-                    executed = True
-                elif self.google_mode.get() == "batch" and self.google_file_entry.get():
-                    self.logger.info("执行 Google 批量搜索...")
-                    search_google(file=self.google_file_entry.get(), output_file=output_file, mode=mode)
-                    executed = True
-
-            elif self.current_tab == "email":
+            if self.current_tab == "email":
                 if self.email_mode.get() == "single" and self.email_entry.get():
                     self.logger.info("执行邮箱泄露检测...")
                     check_one_email(self.email_entry.get(), output_file, mode)
@@ -588,12 +559,6 @@ class LeakGuardGUI:
                 elif self.pass_mode.get() == "batch" and self.pass_file_entry.get():
                     self.logger.info("执行批量密码泄露检测...")
                     batch_check_pass_leak(self.pass_file_entry.get())
-                    executed = True
-
-            elif self.current_tab == "hunter":
-                if self.hunter_domain_entry.get():
-                    self.logger.info("执行 Hunter 搜索...")
-                    search_hunter(domain=self.hunter_domain_entry.get(), output_file=output_file, mode=mode)
                     executed = True
 
             self._setup_blacklist_and_sensitive_words()
