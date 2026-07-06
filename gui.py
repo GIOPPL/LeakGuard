@@ -15,6 +15,26 @@ from LeakGuard.utils import set_sensitiveWords, set_blacklistUsers, read_file
 from LeakGuard.hunter_search import search_hunter
 
 
+class TextRedirector:
+    def __init__(self, gui):
+        self.gui = gui
+
+    def write(self, text):
+        if not text:
+            return
+
+        def append():
+            self.gui.output_text.configure(state=NORMAL)
+            self.gui.output_text.insert(END, text)
+            self.gui.output_text.see(END)
+            self.gui.output_text.configure(state=DISABLED)
+
+        self.gui.root.after(0, append)
+
+    def flush(self):
+        pass
+
+
 class TextHandler(logging.Handler):
     def __init__(self, gui):
         super().__init__()
@@ -54,6 +74,9 @@ class LeakGuardGUI:
         self.start_time = 0
 
         self.create_widgets()
+
+        # 重定向 stdout 到 GUI 日志区域（线程安全）
+        sys.stdout = TextRedirector(self)
 
     def create_widgets(self):
         # 主容器
