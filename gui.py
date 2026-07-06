@@ -6,6 +6,8 @@ import threading
 import logging
 import sys
 import time
+import secrets
+import string
 
 from LeakGuard.email_leak import check_one_email, batch_process_emails_for
 from LeakGuard.pass_leak import check_pass_leak, batch_check_pass_leak
@@ -229,8 +231,12 @@ class LeakGuardGUI:
         self.pass_single_frame = ttk.Frame(card)
         self.pass_single_frame.pack(fill=X, padx=15, pady=10)
         ttk.Label(self.pass_single_frame, text="密码").pack(anchor=W)
-        self.password_entry = ttk.Entry(self.pass_single_frame, show="•")
-        self.password_entry.pack(fill=X, pady=(5, 0))
+        single_inner = ttk.Frame(self.pass_single_frame)
+        single_inner.pack(fill=X, pady=(5, 0))
+        self.password_entry = ttk.Entry(single_inner, show="•")
+        self.password_entry.pack(side=LEFT, fill=X, expand=True)
+        self.pass_check_btn = ttk.Button(single_inner, text="🔍 检测", bootstyle="danger", command=self.check_single_password, width=10)
+        self.pass_check_btn.pack(side=LEFT, padx=(8, 0))
 
         self.pass_batch_frame = ttk.Frame(card)
         ttk.Label(self.pass_batch_frame, text="密码列表文件").pack(anchor=W)
@@ -239,6 +245,51 @@ class LeakGuardGUI:
         self.pass_file_entry = ttk.Entry(batch_inner)
         self.pass_file_entry.pack(side=LEFT, fill=X, expand=True)
         ttk.Button(batch_inner, text="浏览", bootstyle="danger-outline", command=self.browse_pass_file).pack(side=LEFT, padx=(8, 0))
+
+        # 随机密码生成器卡片
+        gen_card = ttk.Labelframe(frame, text="🔧 随机密码生成器", bootstyle="info")
+        gen_card.pack(fill=X, pady=(15, 5))
+
+        gen_inner = ttk.Frame(gen_card)
+        gen_inner.pack(fill=X, padx=15, pady=15)
+
+        # 长度设置
+        len_frame = ttk.Frame(gen_inner)
+        len_frame.pack(fill=X, pady=(0, 10))
+        ttk.Label(len_frame, text="密码长度:", font=("Microsoft YaHei", 10)).pack(side=LEFT)
+        self.pass_len_var = tk.IntVar(value=16)
+        self.pass_len_scale = ttk.Scale(len_frame, from_=8, to=32, variable=self.pass_len_var, orient=HORIZONTAL, length=200, command=self._on_pass_len_change)
+        self.pass_len_scale.pack(side=LEFT, padx=(10, 5))
+        self.pass_len_label = ttk.Label(len_frame, text="16", font=("Consolas", 11, "bold"), foreground="#3B82F6")
+        self.pass_len_label.pack(side=LEFT)
+
+        # 字符类型
+        char_frame = ttk.Frame(gen_inner)
+        char_frame.pack(fill=X, pady=(0, 10))
+        ttk.Label(char_frame, text="包含字符:", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        char_inner = ttk.Frame(char_frame)
+        char_inner.pack(fill=X, pady=(5, 0))
+        self.use_upper = tk.BooleanVar(value=True)
+        self.use_lower = tk.BooleanVar(value=True)
+        self.use_digit = tk.BooleanVar(value=True)
+        self.use_special = tk.BooleanVar(value=True)
+        ttk.Checkbutton(char_inner, text="大写字母", variable=self.use_upper, bootstyle="info-round-toggle").pack(side=LEFT, padx=(0, 10))
+        ttk.Checkbutton(char_inner, text="小写字母", variable=self.use_lower, bootstyle="info-round-toggle").pack(side=LEFT, padx=(0, 10))
+        ttk.Checkbutton(char_inner, text="数字", variable=self.use_digit, bootstyle="info-round-toggle").pack(side=LEFT, padx=(0, 10))
+        ttk.Checkbutton(char_inner, text="特殊符号", variable=self.use_special, bootstyle="info-round-toggle").pack(side=LEFT, padx=(0, 10))
+
+        # 生成结果
+        result_frame = ttk.Frame(gen_inner)
+        result_frame.pack(fill=X, pady=(0, 10))
+        ttk.Label(result_frame, text="生成结果:", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        result_inner = ttk.Frame(result_frame)
+        result_inner.pack(fill=X, pady=(5, 0))
+        self.gen_password_entry = ttk.Entry(result_inner, font=("Consolas", 11))
+        self.gen_password_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(result_inner, text="📋", bootstyle="info-outline", command=self.copy_password, width=4).pack(side=LEFT, padx=(8, 0))
+
+        # 生成按钮
+        ttk.Button(gen_inner, text="🎲 生成密码", bootstyle="info", command=self.generate_password, width=20).pack(pady=(5, 0))
 
         return frame
 
@@ -494,6 +545,75 @@ class LeakGuardGUI:
         if filename:
             self.sensitive_file_entry.delete(0, END)
             self.sensitive_file_entry.insert(0, filename)
+
+    def check_single_password(self):
+        password = self.password_entry.get()
+        if not password:
+            messagebox.showwarning("提示", "请输入要检测的密码")
+            return
+        self.pass_check_btn.configure(state=DISABLED, text="检测中...")
+        thread = threading.Thread(target=self._check_single_password_thread, args=(password,), daemon=True)
+        thread.start()
+
+    def _check_single_password_thread(self, password):
+        try:
+            check_pass_leak(password)
+        finally:
+            self.root.after(0, self._reset_pass_check_btn)
+
+    def _reset_pass_check_btn(self):
+        self.pass_check_btn.configure(state=NORMAL, text="🔍 检测")
+
+    def _on_pass_len_change(self, value):
+        self.pass_len_label.configure(text=f"{int(float(value))}")
+
+    def generate_password(self):
+        length = self.pass_len_var.get()
+        chars = ""
+        if self.use_upper.get():
+            chars += string.ascii_uppercase
+        if self.use_lower.get():
+            chars += string.ascii_lowercase
+        if self.use_digit.get():
+            chars += string.digits
+        if self.use_special.get():
+            chars += "!@#$%^&*()_+-=[]{}|;:,.<>?"
+
+        if not chars:
+            messagebox.showwarning("提示", "请至少选择一种字符类型")
+            return
+
+        # 确保每种选中的类型至少出现一次
+        password_chars = []
+        selected_sets = []
+        if self.use_upper.get():
+            selected_sets.append(string.ascii_uppercase)
+        if self.use_lower.get():
+            selected_sets.append(string.ascii_lowercase)
+        if self.use_digit.get():
+            selected_sets.append(string.digits)
+        if self.use_special.get():
+            selected_sets.append("!@#$%^&*()_+-=[]{}|;:,.<>?")
+
+        for s in selected_sets:
+            password_chars.append(secrets.choice(s))
+
+        for _ in range(length - len(selected_sets)):
+            password_chars.append(secrets.choice(chars))
+
+        secrets.SystemRandom().shuffle(password_chars)
+        password = "".join(password_chars)
+
+        self.gen_password_entry.delete(0, END)
+        self.gen_password_entry.insert(0, password)
+
+    def copy_password(self):
+        password = self.gen_password_entry.get()
+        if password:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(password)
+            self.root.update()
+            messagebox.showinfo("提示", "密码已复制到剪贴板")
 
     def run_detection(self):
         self.running = True
