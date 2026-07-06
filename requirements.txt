@@ -12,9 +12,12 @@ PySocks~=1.7.1
 # 网页解析
 beautifulsoup4~=4.12.3
 
-# GUI 依赖 (在某些系统上需要显式安装)
-tkinter~=0.1.0; python_version < "3.10"
-tkinter; python_version >= "3.10"
+# GUI 主题库
+ttkbootstrap~=1.10.1
+
+# GUI 依赖 (tkinter 是 Python 标准库，不需要安装，部分 Linux 系统需要手动安装 python3-tk)
+# tkinter~=0.1.0; python_version < "3.10"
+# tkinter; python_version >= "3.10"
 
 # 日志处理增强 (如果需要更高级的日志功能)
 # logging~=0.4.9
