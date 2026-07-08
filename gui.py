@@ -52,7 +52,7 @@ class TextHandler(logging.Handler):
 class LeakGuardGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("LeakGuard - 综合泄露检测工具")
+        self.root.title("铁密 - 综合泄露检测工具")
         self.root.geometry("1100x800")
         self.root.minsize(950, 700)
 
@@ -110,7 +110,7 @@ class LeakGuardGUI:
         logo_frame = ttk.Frame(sidebar)
         logo_frame.pack(fill=X, pady=(25, 5), padx=15)
         ttk.Label(logo_frame, text="🔒", font=("Segoe UI Emoji", 28), foreground="#10B981").pack()
-        ttk.Label(logo_frame, text="LeakGuard", font=("Consolas", 16, "bold")).pack()
+        ttk.Label(logo_frame, text="铁密", font=("Consolas", 16, "bold")).pack()
         ttk.Label(logo_frame, text="综合泄露检测工具", font=("Microsoft YaHei", 9), foreground="#6c757d").pack(pady=(2, 0))
 
         ttk.Separator(sidebar, bootstyle="secondary").pack(fill=X, padx=15, pady=15)
