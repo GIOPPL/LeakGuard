@@ -181,7 +181,7 @@ class LeakGuardGUI:
         settings_btn.pack(fill=X, padx=10, pady=2)
         self.nav_buttons["settings"] = settings_btn
 
-        self.highlight_nav("email")
+        self.highlight_nav(self.current_tab)
 
     def highlight_nav(self, key):
         for k, btn in self.nav_buttons.items():
@@ -223,7 +223,9 @@ class LeakGuardGUI:
         self.content_frames["settings"] = self.build_settings_frame(parent)
 
         for k, frame in self.content_frames.items():
-            if k != "email":
+            if k == self.current_tab:
+                frame.pack(fill=BOTH, expand=True)
+            else:
                 frame.pack_forget()
 
     def build_email_frame(self, parent):
@@ -757,15 +759,19 @@ class LeakGuardGUI:
         ttk.Checkbutton(inner, text="包含子文件夹", variable=self.shred_recursive, bootstyle="danger-round-toggle").pack(anchor=W, pady=(10, 0))
 
         ttk.Label(inner, text="覆写次数:", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        passes_frame = ttk.Frame(inner)
+        passes_frame.pack(fill=X, pady=(5, 0))
         self.shred_passes = ttk.IntVar(value=3)
-        ttk.Radiobutton(inner, text="1次（快速）", variable=self.shred_passes, value=1, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
-        ttk.Radiobutton(inner, text="3次（标准）", variable=self.shred_passes, value=3, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
-        ttk.Radiobutton(inner, text="7次（军规）", variable=self.shred_passes, value=7, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(passes_frame, text="1次（快速）", variable=self.shred_passes, value=1, bootstyle="danger-toolbutton", width=10).pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(passes_frame, text="3次（标准）", variable=self.shred_passes, value=3, bootstyle="danger-toolbutton", width=10).pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(passes_frame, text="7次（军规）", variable=self.shred_passes, value=7, bootstyle="danger-toolbutton", width=10).pack(side=LEFT, padx=(0, 10))
 
         ttk.Label(inner, text="覆写模式:", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        mode_frame = ttk.Frame(inner)
+        mode_frame.pack(fill=X, pady=(5, 0))
         self.shred_mode = ttk.StringVar(value="random")
-        ttk.Radiobutton(inner, text="随机数据", variable=self.shred_mode, value="random", bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
-        ttk.Radiobutton(inner, text="0x00", variable=self.shred_mode, value="zero", bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(mode_frame, text="随机数据", variable=self.shred_mode, value="random", bootstyle="danger-toolbutton", width=10).pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(mode_frame, text="0x00", variable=self.shred_mode, value="zero", bootstyle="danger-toolbutton", width=10).pack(side=LEFT, padx=(0, 10))
 
         warn = ttk.Label(inner, text="⚠️ 警告：文件粉碎后将无法恢复，请确认选择的文件是否正确", font=("Microsoft YaHei", 9), foreground="#EF4444")
         warn.pack(anchor=W, pady=(15, 0))
