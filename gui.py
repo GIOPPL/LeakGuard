@@ -730,6 +730,9 @@ class LeakGuardGUI:
         self.clip_delay_label.pack(side=LEFT)
         ttk.Label(delay_frame, text="秒", font=("Microsoft YaHei", 10)).pack(side=LEFT)
 
+        # 启动剪贴板监控循环
+        self._clipboard_monitor()
+
         return frame
 
     def build_shred_frame(self, parent):
@@ -1516,13 +1519,10 @@ class LeakGuardGUI:
     def clipboard_toggle_auto(self):
         if self.clip_auto.get():
             self.logger.info(f"自动清理已启用，延迟 {self.clip_delay.get()} 秒")
-            self._clipboard_auto_loop()
         else:
             self.logger.info("自动清理已禁用")
 
-    def _clipboard_auto_loop(self):
-        if not self.clip_auto.get():
-            return
+    def _clipboard_monitor(self):
         try:
             text = pyperclip.paste()
             if text and text != getattr(self, "_last_clipboard", ""):
@@ -1533,14 +1533,14 @@ class LeakGuardGUI:
                 self.clip_preview.delete("1.0", END)
                 self.clip_preview.insert("1.0", preview)
                 self.clip_preview.configure(state=DISABLED)
-            elif text and hasattr(self, "_clip_timestamp"):
+            elif text and self.clip_auto.get() and hasattr(self, "_clip_timestamp"):
                 elapsed = time.time() - self._clip_timestamp
                 if elapsed >= self.clip_delay.get():
                     self.clipboard_clear_manual()
                     self._clip_timestamp = time.time()
         except Exception:
             pass
-        self.root.after(1000, self._clipboard_auto_loop)
+        self.root.after(1000, self._clipboard_monitor)
 
     # ========== 文件粉碎 ==========
     def browse_shred_file(self):
