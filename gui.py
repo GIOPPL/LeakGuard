@@ -8,10 +8,26 @@ import sys
 import time
 import secrets
 import string
+import os
+import math
+import base64
+import ctypes
+import random
+from urllib.parse import urlparse
 
 from LeakGuard.email_leak import check_one_email, batch_process_emails_for
 from LeakGuard.pass_leak import check_pass_leak, batch_check_pass_leak
 from LeakGuard.utils import set_sensitiveWords, set_blacklistUsers, read_file
+
+from pypdf import PdfReader, PdfWriter
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from PIL import Image, ImageGrab
+import cv2
+from pyzbar.pyzbar import decode
+import psutil
+import pyperclip
 
 
 class TextRedirector:
@@ -132,7 +148,29 @@ class LeakGuardGUI:
             btn.pack(fill=X, padx=10, pady=2)
             self.nav_buttons[key] = btn
 
-        ttk.Separator(sidebar, bootstyle="secondary").pack(fill=X, padx=15, pady=15)
+        ttk.Separator(sidebar, bootstyle="secondary").pack(fill=X, padx=15, pady=10)
+
+        tool_items = [
+            ("pdf", "📄  PDF 加解密"),
+            ("aes", "🔑  文本加解密"),
+            ("stego", "🖼️  图片隐写检测"),
+            ("qr", "📷  二维码解析"),
+            ("port", "🌐  端口快照"),
+            ("clipboard", "🛡️  剪贴板哨兵"),
+            ("shred", "🗑️  文件粉碎"),
+        ]
+
+        for key, label in tool_items:
+            btn = ttk.Button(
+                sidebar,
+                text=label,
+                bootstyle="link",
+                command=lambda k=key: self.switch_tab(k)
+            )
+            btn.pack(fill=X, padx=10, pady=2)
+            self.nav_buttons[key] = btn
+
+        ttk.Separator(sidebar, bootstyle="secondary").pack(fill=X, padx=15, pady=10)
 
         settings_btn = ttk.Button(
             sidebar,
@@ -166,6 +204,13 @@ class LeakGuardGUI:
 
         self.content_frames["email"] = self.build_email_frame(parent)
         self.content_frames["password"] = self.build_password_frame(parent)
+        self.content_frames["pdf"] = self.build_pdf_frame(parent)
+        self.content_frames["aes"] = self.build_aes_frame(parent)
+        self.content_frames["stego"] = self.build_stego_frame(parent)
+        self.content_frames["qr"] = self.build_qr_frame(parent)
+        self.content_frames["port"] = self.build_port_frame(parent)
+        self.content_frames["clipboard"] = self.build_clipboard_frame(parent)
+        self.content_frames["shred"] = self.build_shred_frame(parent)
         self.content_frames["settings"] = self.build_settings_frame(parent)
 
         for k, frame in self.content_frames.items():
@@ -395,6 +440,328 @@ class LeakGuardGUI:
         ttk.Label(inner, text="目标域名").pack(anchor=W)
         self.hunter_domain_entry = ttk.Entry(inner)
         self.hunter_domain_entry.pack(fill=X, pady=(5, 0))
+
+        return frame
+
+    def build_pdf_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="📄 PDF 加密/解密", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="给 PDF 文件设置密码或移除密码保护", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        card = ttk.Labelframe(frame, text="操作配置", bootstyle="warning")
+        card.pack(fill=X, pady=5)
+
+        mode_frame = ttk.Frame(card)
+        mode_frame.pack(fill=X, padx=15, pady=(10, 5))
+        ttk.Label(mode_frame, text="操作模式:", font=("Microsoft YaHei", 10)).pack(side=LEFT)
+        self.pdf_mode = ttk.StringVar(value="encrypt")
+        ttk.Radiobutton(mode_frame, text="加密", variable=self.pdf_mode, value="encrypt", bootstyle="warning-toolbutton", command=self.toggle_pdf_mode).pack(side=LEFT, padx=(10, 5))
+        ttk.Radiobutton(mode_frame, text="解密", variable=self.pdf_mode, value="decrypt", bootstyle="warning-toolbutton", command=self.toggle_pdf_mode).pack(side=LEFT, padx=5)
+
+        self.pdf_encrypt_frame = ttk.Frame(card)
+        self.pdf_encrypt_frame.pack(fill=X, padx=15, pady=10)
+        ttk.Label(self.pdf_encrypt_frame, text="选择 PDF 文件", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        f1 = ttk.Frame(self.pdf_encrypt_frame)
+        f1.pack(fill=X, pady=(5, 0))
+        self.pdf_file_entry = ttk.Entry(f1)
+        self.pdf_file_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(f1, text="浏览", bootstyle="warning-outline", command=self.browse_pdf_file).pack(side=LEFT, padx=(8, 0))
+
+        ttk.Label(self.pdf_encrypt_frame, text="打开密码（可选）", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.pdf_open_pass = ttk.Entry(self.pdf_encrypt_frame, show="•")
+        self.pdf_open_pass.pack(fill=X, pady=(5, 0))
+
+        ttk.Label(self.pdf_encrypt_frame, text="权限密码（可选）", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.pdf_perm_pass = ttk.Entry(self.pdf_encrypt_frame, show="•")
+        self.pdf_perm_pass.pack(fill=X, pady=(5, 0))
+
+        perm_frame = ttk.Frame(self.pdf_encrypt_frame)
+        perm_frame.pack(fill=X, pady=(10, 0))
+        self.pdf_no_print = tk.BooleanVar(value=False)
+        self.pdf_no_copy = tk.BooleanVar(value=False)
+        self.pdf_no_edit = tk.BooleanVar(value=False)
+        ttk.Checkbutton(perm_frame, text="禁止打印", variable=self.pdf_no_print, bootstyle="warning-round-toggle").pack(side=LEFT, padx=(0, 10))
+        ttk.Checkbutton(perm_frame, text="禁止复制", variable=self.pdf_no_copy, bootstyle="warning-round-toggle").pack(side=LEFT, padx=(0, 10))
+        ttk.Checkbutton(perm_frame, text="禁止编辑", variable=self.pdf_no_edit, bootstyle="warning-round-toggle").pack(side=LEFT, padx=(0, 10))
+
+        ttk.Label(self.pdf_encrypt_frame, text="输出文件名", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.pdf_out_entry = ttk.Entry(self.pdf_encrypt_frame)
+        self.pdf_out_entry.pack(fill=X, pady=(5, 0))
+
+        ttk.Button(self.pdf_encrypt_frame, text="🔒 执行加密", bootstyle="warning", command=self.pdf_process, width=20).pack(pady=(15, 0))
+
+        self.pdf_decrypt_frame = ttk.Frame(card)
+        ttk.Label(self.pdf_decrypt_frame, text="选择 PDF 文件", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        f2 = ttk.Frame(self.pdf_decrypt_frame)
+        f2.pack(fill=X, pady=(5, 0))
+        self.pdf_decrypt_file_entry = ttk.Entry(f2)
+        self.pdf_decrypt_file_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(f2, text="浏览", bootstyle="warning-outline", command=self.browse_pdf_decrypt_file).pack(side=LEFT, padx=(8, 0))
+
+        ttk.Label(self.pdf_decrypt_frame, text="打开密码", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.pdf_decrypt_pass = ttk.Entry(self.pdf_decrypt_frame, show="•")
+        self.pdf_decrypt_pass.pack(fill=X, pady=(5, 0))
+
+        ttk.Label(self.pdf_decrypt_frame, text="输出文件名", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.pdf_decrypt_out_entry = ttk.Entry(self.pdf_decrypt_frame)
+        self.pdf_decrypt_out_entry.pack(fill=X, pady=(5, 0))
+
+        ttk.Button(self.pdf_decrypt_frame, text="🔓 执行解密", bootstyle="warning", command=self.pdf_decrypt_process, width=20).pack(pady=(15, 0))
+
+        return frame
+
+    def toggle_pdf_mode(self):
+        if self.pdf_mode.get() == "encrypt":
+            self.pdf_decrypt_frame.pack_forget()
+            self.pdf_encrypt_frame.pack(fill=X, padx=15, pady=10)
+        else:
+            self.pdf_encrypt_frame.pack_forget()
+            self.pdf_decrypt_frame.pack(fill=X, padx=15, pady=10)
+
+    def build_aes_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🔑 敏感文本 AES 加解密", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="安全地加密和分享敏感信息", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        mode_card = ttk.Labelframe(frame, text="操作模式", bootstyle="info")
+        mode_card.pack(fill=X, pady=5)
+        mode_inner = ttk.Frame(mode_card)
+        mode_inner.pack(fill=X, padx=15, pady=10)
+        self.aes_mode = ttk.StringVar(value="encrypt")
+        ttk.Radiobutton(mode_inner, text="加密模式", variable=self.aes_mode, value="encrypt", bootstyle="info-toolbutton", command=self.toggle_aes_mode).pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(mode_inner, text="解密模式", variable=self.aes_mode, value="decrypt", bootstyle="info-toolbutton", command=self.toggle_aes_mode).pack(side=LEFT, padx=(0, 10))
+
+        self.aes_encrypt_frame = ttk.Frame(frame)
+        self.aes_encrypt_frame.pack(fill=X, pady=5)
+        enc_card = ttk.Labelframe(self.aes_encrypt_frame, text="🔐 加密", bootstyle="info")
+        enc_card.pack(fill=X, pady=5)
+        enc_inner = ttk.Frame(enc_card)
+        enc_inner.pack(fill=X, padx=15, pady=10)
+        ttk.Label(enc_inner, text="待加密文本", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        self.aes_plain_text = tk.Text(enc_inner, height=5, wrap=WORD, font=("Consolas", 10))
+        self.aes_plain_text.pack(fill=X, pady=(5, 0))
+        ttk.Label(enc_inner, text="密码", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.aes_enc_pass = ttk.Entry(enc_inner, show="•")
+        self.aes_enc_pass.pack(fill=X, pady=(5, 0))
+        ttk.Label(enc_inner, text="加密结果（Base64）", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.aes_enc_result = tk.Text(enc_inner, height=3, wrap=WORD, font=("Consolas", 10))
+        self.aes_enc_result.pack(fill=X, pady=(5, 0))
+        btn_frame = ttk.Frame(enc_inner)
+        btn_frame.pack(fill=X, pady=(10, 0))
+        ttk.Button(btn_frame, text="🔒 执行加密", bootstyle="info", command=self.aes_encrypt).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="📋 复制结果", bootstyle="info-outline", command=self.aes_copy_enc_result).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="🗑 清空", bootstyle="outline", command=self.aes_clear_encrypt).pack(side=LEFT)
+
+        self.aes_decrypt_frame = ttk.Frame(frame)
+        dec_card = ttk.Labelframe(self.aes_decrypt_frame, text="🔓 解密", bootstyle="info")
+        dec_card.pack(fill=X, pady=5)
+        dec_inner = ttk.Frame(dec_card)
+        dec_inner.pack(fill=X, padx=15, pady=10)
+        ttk.Label(dec_inner, text="待解密文本（Base64）", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        self.aes_cipher_text = tk.Text(dec_inner, height=5, wrap=WORD, font=("Consolas", 10))
+        self.aes_cipher_text.pack(fill=X, pady=(5, 0))
+        ttk.Label(dec_inner, text="密码", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.aes_dec_pass = ttk.Entry(dec_inner, show="•")
+        self.aes_dec_pass.pack(fill=X, pady=(5, 0))
+        ttk.Label(dec_inner, text="解密结果", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.aes_dec_result = tk.Text(dec_inner, height=3, wrap=WORD, font=("Consolas", 10))
+        self.aes_dec_result.pack(fill=X, pady=(5, 0))
+        btn_frame2 = ttk.Frame(dec_inner)
+        btn_frame2.pack(fill=X, pady=(10, 0))
+        ttk.Button(btn_frame2, text="🔓 执行解密", bootstyle="info", command=self.aes_decrypt).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame2, text="📋 复制结果", bootstyle="info-outline", command=self.aes_copy_dec_result).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame2, text="🗑 清空", bootstyle="outline", command=self.aes_clear_decrypt).pack(side=LEFT)
+
+        return frame
+
+    def toggle_aes_mode(self):
+        if self.aes_mode.get() == "encrypt":
+            self.aes_decrypt_frame.pack_forget()
+            self.aes_encrypt_frame.pack(fill=X, pady=5)
+        else:
+            self.aes_encrypt_frame.pack_forget()
+            self.aes_decrypt_frame.pack(fill=X, pady=5)
+
+    def build_stego_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🖼️ 图片隐写检测", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="检测图片是否通过 LSB 隐藏了额外数据", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        card = ttk.Labelframe(frame, text="文件选择", bootstyle="success")
+        card.pack(fill=X, pady=5)
+        inner = ttk.Frame(card)
+        inner.pack(fill=X, padx=15, pady=15)
+        ttk.Label(inner, text="选择图片（PNG/BMP）", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        f = ttk.Frame(inner)
+        f.pack(fill=X, pady=(5, 0))
+        self.stego_file_entry = ttk.Entry(f)
+        self.stego_file_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(f, text="浏览", bootstyle="success-outline", command=self.browse_stego_file).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(inner, text="🔍 开始检测", bootstyle="success", command=self.stego_detect, width=20).pack(pady=(15, 0))
+
+        self.stego_result_frame = ttk.Labelframe(frame, text="📊 检测结果", bootstyle="success")
+        self.stego_result_frame.pack(fill=X, pady=(15, 5))
+        result_inner = ttk.Frame(self.stego_result_frame)
+        result_inner.pack(fill=X, padx=15, pady=15)
+        self.stego_result_text = tk.Text(result_inner, height=10, wrap=WORD, font=("Consolas", 10), state=DISABLED)
+        self.stego_result_text.pack(fill=X)
+
+        return frame
+
+    def build_qr_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="📷 二维码安全解析", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="解析二维码内容，识别潜在风险", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        card = ttk.Labelframe(frame, text="文件/截图", bootstyle="primary")
+        card.pack(fill=X, pady=5)
+        inner = ttk.Frame(card)
+        inner.pack(fill=X, padx=15, pady=15)
+        ttk.Label(inner, text="选择图片", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        f = ttk.Frame(inner)
+        f.pack(fill=X, pady=(5, 0))
+        self.qr_file_entry = ttk.Entry(f)
+        self.qr_file_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(f, text="浏览", bootstyle="primary-outline", command=self.browse_qr_file).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(inner, text="📋 从剪贴板读取", bootstyle="primary-outline", command=self.qr_from_clipboard).pack(anchor=W, pady=(10, 0))
+        ttk.Button(inner, text="🔍 解析二维码", bootstyle="primary", command=self.qr_parse, width=20).pack(pady=(10, 0))
+
+        self.qr_result_frame = ttk.Labelframe(frame, text="📊 解析结果", bootstyle="primary")
+        self.qr_result_frame.pack(fill=X, pady=(15, 5))
+        result_inner = ttk.Frame(self.qr_result_frame)
+        result_inner.pack(fill=X, padx=15, pady=15)
+        self.qr_result_text = tk.Text(result_inner, height=12, wrap=WORD, font=("Consolas", 10), state=DISABLED)
+        self.qr_result_text.pack(fill=X)
+        btn_frame = ttk.Frame(result_inner)
+        btn_frame.pack(fill=X, pady=(10, 0))
+        ttk.Button(btn_frame, text="🌐 浏览器打开", bootstyle="primary-outline", command=self.qr_open_browser).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="📋 复制内容", bootstyle="primary-outline", command=self.qr_copy_content).pack(side=LEFT)
+
+        return frame
+
+    def build_port_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🌐 本机端口快照", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="扫描本机开放端口，排查异常监听", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        card = ttk.Labelframe(frame, text="扫描配置", bootstyle="secondary")
+        card.pack(fill=X, pady=5)
+        inner = ttk.Frame(card)
+        inner.pack(fill=X, padx=15, pady=15)
+        ttk.Label(inner, text="扫描范围:", font=("Microsoft YaHei", 10)).pack(side=LEFT)
+        self.port_range = ttk.StringVar(value="common")
+        ttk.Radiobutton(inner, text="常用端口", variable=self.port_range, value="common", bootstyle="secondary-toolbutton").pack(side=LEFT, padx=(10, 5))
+        ttk.Radiobutton(inner, text="全部端口", variable=self.port_range, value="all", bootstyle="secondary-toolbutton").pack(side=LEFT, padx=5)
+        ttk.Button(inner, text="🔍 开始扫描", bootstyle="secondary", command=self.port_scan).pack(side=LEFT, padx=(20, 0))
+
+        result_card = ttk.Labelframe(frame, text="📋 开放端口列表", bootstyle="secondary")
+        result_card.pack(fill=BOTH, expand=True, pady=(15, 5))
+        result_inner = ttk.Frame(result_card)
+        result_inner.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+        cols = ("protocol", "local_addr", "port", "status", "process")
+        self.port_tree = ttk.Treeview(result_inner, columns=cols, show="headings", height=10)
+        self.port_tree.heading("protocol", text="协议")
+        self.port_tree.heading("local_addr", text="本地地址")
+        self.port_tree.heading("port", text="端口")
+        self.port_tree.heading("status", text="状态")
+        self.port_tree.heading("process", text="进程名")
+        self.port_tree.column("protocol", width=60)
+        self.port_tree.column("local_addr", width=120)
+        self.port_tree.column("port", width=60)
+        self.port_tree.column("status", width=80)
+        self.port_tree.column("process", width=200)
+        self.port_tree.pack(side=LEFT, fill=BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(result_inner, command=self.port_tree.yview)
+        self.port_tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill=X, pady=5)
+        ttk.Button(btn_frame, text="📋 复制", bootstyle="outline", command=self.port_copy).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="📁 导出 CSV", bootstyle="outline", command=self.port_export).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(btn_frame, text="🔄 刷新", bootstyle="outline", command=self.port_scan).pack(side=LEFT)
+
+        return frame
+
+    def build_clipboard_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🛡️ 剪贴板安全哨兵", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="防止敏感信息在剪贴板中残留", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        manual_card = ttk.Labelframe(frame, text="🧹 手动清理", bootstyle="info")
+        manual_card.pack(fill=X, pady=5)
+        manual_inner = ttk.Frame(manual_card)
+        manual_inner.pack(fill=X, padx=15, pady=15)
+        ttk.Label(manual_inner, text="当前剪贴板内容预览", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        self.clip_preview = tk.Text(manual_inner, height=3, wrap=WORD, font=("Consolas", 10), state=DISABLED)
+        self.clip_preview.pack(fill=X, pady=(5, 0))
+        ttk.Button(manual_inner, text="🧹 立即清空剪贴板", bootstyle="info", command=self.clipboard_clear_manual, width=20).pack(pady=(10, 0))
+
+        auto_card = ttk.Labelframe(frame, text="⏱️ 自动清理", bootstyle="info")
+        auto_card.pack(fill=X, pady=(15, 5))
+        auto_inner = ttk.Frame(auto_card)
+        auto_inner.pack(fill=X, padx=15, pady=15)
+        self.clip_auto = tk.BooleanVar(value=False)
+        ttk.Checkbutton(auto_inner, text="启用自动清理", variable=self.clip_auto, bootstyle="info-round-toggle", command=self.clipboard_toggle_auto).pack(anchor=W)
+
+        delay_frame = ttk.Frame(auto_inner)
+        delay_frame.pack(fill=X, pady=(10, 0))
+        ttk.Label(delay_frame, text="自动清理延迟:", font=("Microsoft YaHei", 10)).pack(side=LEFT)
+        self.clip_delay = tk.IntVar(value=30)
+        ttk.Scale(delay_frame, from_=5, to=120, variable=self.clip_delay, orient=HORIZONTAL, length=200, command=self._on_clip_delay_change).pack(side=LEFT, padx=(10, 5))
+        self.clip_delay_label = ttk.Label(delay_frame, text="30", font=("Consolas", 11, "bold"), foreground="#3B82F6")
+        self.clip_delay_label.pack(side=LEFT)
+        ttk.Label(delay_frame, text="秒", font=("Microsoft YaHei", 10)).pack(side=LEFT)
+
+        return frame
+
+    def build_shred_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🗑️ 文件安全粉碎", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="覆写删除敏感文件，防止数据恢复", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
+        card = ttk.Labelframe(frame, text="⚠️ 文件选择", bootstyle="danger")
+        card.pack(fill=X, pady=5)
+        inner = ttk.Frame(card)
+        inner.pack(fill=X, padx=15, pady=15)
+        ttk.Label(inner, text="选择文件/文件夹", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        f = ttk.Frame(inner)
+        f.pack(fill=X, pady=(5, 0))
+        self.shred_path_entry = ttk.Entry(f)
+        self.shred_path_entry.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(f, text="浏览文件", bootstyle="danger-outline", command=self.browse_shred_file).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(f, text="浏览文件夹", bootstyle="danger-outline", command=self.browse_shred_dir).pack(side=LEFT, padx=(8, 0))
+
+        self.shred_recursive = tk.BooleanVar(value=False)
+        ttk.Checkbutton(inner, text="包含子文件夹", variable=self.shred_recursive, bootstyle="danger-round-toggle").pack(anchor=W, pady=(10, 0))
+
+        ttk.Label(inner, text="覆写次数:", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.shred_passes = ttk.IntVar(value=3)
+        ttk.Radiobutton(inner, text="1次（快速）", variable=self.shred_passes, value=1, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(inner, text="3次（标准）", variable=self.shred_passes, value=3, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(inner, text="7次（军规）", variable=self.shred_passes, value=7, bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+
+        ttk.Label(inner, text="覆写模式:", font=("Microsoft YaHei", 10)).pack(anchor=W, pady=(10, 0))
+        self.shred_mode = ttk.StringVar(value="random")
+        ttk.Radiobutton(inner, text="随机数据", variable=self.shred_mode, value="random", bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+        ttk.Radiobutton(inner, text="0x00", variable=self.shred_mode, value="zero", bootstyle="danger-toolbutton").pack(side=LEFT, padx=(0, 10))
+
+        warn = ttk.Label(inner, text="⚠️ 警告：文件粉碎后将无法恢复，请确认选择的文件是否正确", font=("Microsoft YaHei", 9), foreground="#EF4444")
+        warn.pack(anchor=W, pady=(15, 0))
+
+        ttk.Button(inner, text="🔥 确认粉碎", bootstyle="danger", command=self.shred_execute, width=20).pack(pady=(15, 0))
+
+        self.shred_progress = ttk.Progressbar(frame, mode="determinate", bootstyle="danger")
+        self.shred_progress.pack(fill=X, pady=(15, 5))
 
         return frame
 
@@ -707,6 +1074,534 @@ class LeakGuardGUI:
         self.running = False
         self.logger.info("检测已停止")
         self._enable_buttons()
+
+    # ========== PDF 加解密 ==========
+    def browse_pdf_file(self):
+        filename = filedialog.askopenfilename(title="选择 PDF 文件", filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")])
+        if filename:
+            self.pdf_file_entry.delete(0, END)
+            self.pdf_file_entry.insert(0, filename)
+
+    def browse_pdf_decrypt_file(self):
+        filename = filedialog.askopenfilename(title="选择 PDF 文件", filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")])
+        if filename:
+            self.pdf_decrypt_file_entry.delete(0, END)
+            self.pdf_decrypt_file_entry.insert(0, filename)
+
+    def pdf_process(self):
+        infile = self.pdf_file_entry.get()
+        if not infile or not os.path.exists(infile):
+            messagebox.showwarning("提示", "请选择有效的 PDF 文件")
+            return
+        outfile = self.pdf_out_entry.get()
+        if not outfile:
+            outfile = infile.replace(".pdf", "_encrypted.pdf")
+        thread = threading.Thread(target=self._pdf_encrypt_thread, args=(infile, outfile), daemon=True)
+        thread.start()
+
+    def _pdf_encrypt_thread(self, infile, outfile):
+        try:
+            self.logger.info(f"开始加密 PDF: {os.path.basename(infile)}")
+            reader = PdfReader(infile)
+            writer = PdfWriter()
+            for page in reader.pages:
+                writer.add_page(page)
+            open_pass = self.pdf_open_pass.get()
+            perm_pass = self.pdf_perm_pass.get()
+            if not open_pass and not perm_pass:
+                self.logger.warning("未设置任何密码，跳过加密")
+                return
+            kwargs = {}
+            if open_pass:
+                kwargs["user_password"] = open_pass
+            if perm_pass:
+                kwargs["owner_password"] = perm_pass
+            if self.pdf_no_print.get():
+                writer.add_prohibition("printing")
+            if self.pdf_no_copy.get():
+                writer.add_prohibition("copying")
+            if self.pdf_no_edit.get():
+                writer.add_prohibition("modifying")
+            writer.encrypt(**kwargs)
+            with open(outfile, "wb") as f:
+                writer.write(f)
+            self.logger.info(f"加密完成，已保存至: {outfile}")
+        except Exception as e:
+            self.logger.error(f"PDF 加密失败: {str(e)}")
+
+    def pdf_decrypt_process(self):
+        infile = self.pdf_decrypt_file_entry.get()
+        if not infile or not os.path.exists(infile):
+            messagebox.showwarning("提示", "请选择有效的 PDF 文件")
+            return
+        outfile = self.pdf_decrypt_out_entry.get()
+        if not outfile:
+            outfile = infile.replace(".pdf", "_decrypted.pdf")
+        thread = threading.Thread(target=self._pdf_decrypt_thread, args=(infile, outfile), daemon=True)
+        thread.start()
+
+    def _pdf_decrypt_thread(self, infile, outfile):
+        try:
+            self.logger.info(f"开始解密 PDF: {os.path.basename(infile)}")
+            reader = PdfReader(infile)
+            password = self.pdf_decrypt_pass.get()
+            if reader.is_encrypted and password:
+                reader.decrypt(password)
+            writer = PdfWriter()
+            for page in reader.pages:
+                writer.add_page(page)
+            with open(outfile, "wb") as f:
+                writer.write(f)
+            self.logger.info(f"解密完成，已保存至: {outfile}")
+        except Exception as e:
+            self.logger.error(f"PDF 解密失败: {str(e)}")
+
+    # ========== AES 文本加解密 ==========
+    def _derive_key(self, password: str, salt: bytes = None):
+        if salt is None:
+            salt = os.urandom(16)
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
+        key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+        return key, salt
+
+    def aes_encrypt(self):
+        plain = self.aes_plain_text.get("1.0", END).strip()
+        password = self.aes_enc_pass.get()
+        if not plain:
+            messagebox.showwarning("提示", "请输入待加密文本")
+            return
+        if not password:
+            messagebox.showwarning("提示", "请输入密码")
+            return
+        try:
+            key, salt = self._derive_key(password)
+            f = Fernet(key)
+            token = f.encrypt(plain.encode())
+            result = base64.b64encode(salt + token).decode()
+            self.aes_enc_result.delete("1.0", END)
+            self.aes_enc_result.insert("1.0", result)
+            self.logger.info("文本加密完成")
+        except Exception as e:
+            self.logger.error(f"加密失败: {str(e)}")
+
+    def aes_decrypt(self):
+        cipher = self.aes_cipher_text.get("1.0", END).strip()
+        password = self.aes_dec_pass.get()
+        if not cipher:
+            messagebox.showwarning("提示", "请输入待解密文本")
+            return
+        if not password:
+            messagebox.showwarning("提示", "请输入密码")
+            return
+        try:
+            data = base64.b64decode(cipher.encode())
+            salt = data[:16]
+            token = data[16:]
+            key, _ = self._derive_key(password, salt)
+            f = Fernet(key)
+            plain = f.decrypt(token).decode()
+            self.aes_dec_result.delete("1.0", END)
+            self.aes_dec_result.insert("1.0", plain)
+            self.logger.info("文本解密完成")
+        except Exception:
+            messagebox.showerror("错误", "解密失败，请检查密码或密文格式")
+
+    def aes_copy_enc_result(self):
+        text = self.aes_enc_result.get("1.0", END).strip()
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            self.logger.info("加密结果已复制到剪贴板")
+
+    def aes_copy_dec_result(self):
+        text = self.aes_dec_result.get("1.0", END).strip()
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            self.logger.info("解密结果已复制到剪贴板")
+
+    def aes_clear_encrypt(self):
+        self.aes_plain_text.delete("1.0", END)
+        self.aes_enc_pass.delete(0, END)
+        self.aes_enc_result.delete("1.0", END)
+
+    def aes_clear_decrypt(self):
+        self.aes_cipher_text.delete("1.0", END)
+        self.aes_dec_pass.delete(0, END)
+        self.aes_dec_result.delete("1.0", END)
+
+    # ========== 图片隐写检测 ==========
+    def browse_stego_file(self):
+        filename = filedialog.askopenfilename(title="选择图片", filetypes=[("Image files", "*.png *.bmp"), ("All files", "*.*")])
+        if filename:
+            self.stego_file_entry.delete(0, END)
+            self.stego_file_entry.insert(0, filename)
+
+    def stego_detect(self):
+        filepath = self.stego_file_entry.get()
+        if not filepath or not os.path.exists(filepath):
+            messagebox.showwarning("提示", "请选择有效的图片文件")
+            return
+        thread = threading.Thread(target=self._stego_detect_thread, args=(filepath,), daemon=True)
+        thread.start()
+
+    def _stego_detect_thread(self, filepath):
+        try:
+            self.logger.info(f"开始检测图片: {os.path.basename(filepath)}")
+            img = Image.open(filepath)
+            if img.mode not in ("RGB", "RGBA", "L"):
+                self.logger.warning("仅支持 RGB/RGBA/灰度图片")
+                return
+            pixels = list(img.getdata())
+            result_lines = [f"文件: {os.path.basename(filepath)}", f"尺寸: {img.size[0]} x {img.size[1]}", f"模式: {img.mode}", ""]
+            result_lines.append("── LSB 熵值分析 ──")
+
+            channels = []
+            if img.mode == "RGB":
+                channels = [("R", 0), ("G", 1), ("B", 2)]
+            elif img.mode == "RGBA":
+                channels = [("R", 0), ("G", 1), ("B", 2), ("A", 3)]
+            elif img.mode == "L":
+                channels = [("L", 0)]
+
+            has_anomaly = False
+            for name, idx in channels:
+                bits = [str(p[idx] & 1) for p in pixels if isinstance(p, (tuple, list)) and len(p) > idx]
+                if not bits:
+                    continue
+                entropy = self._calc_entropy(bits)
+                status = "正常"
+                if entropy > 7.5:
+                    status = "异常🔴"
+                    has_anomaly = True
+                elif entropy > 6.0:
+                    status = "可疑🟡"
+                result_lines.append(f"{name} 通道熵值: {entropy:.2f}  [{status}]")
+
+            result_lines.append("")
+            if has_anomaly:
+                result_lines.append("判定结果: 疑似隐藏数据")
+                result_lines.append("建议: 使用专业工具深入分析")
+            else:
+                result_lines.append("判定结果: 未发现明显隐写痕迹")
+
+            def update():
+                self.stego_result_text.configure(state=NORMAL)
+                self.stego_result_text.delete("1.0", END)
+                self.stego_result_text.insert("1.0", "\n".join(result_lines))
+                self.stego_result_text.configure(state=DISABLED)
+
+            self.root.after(0, update)
+            self.logger.info("图片隐写检测完成")
+        except Exception as e:
+            self.logger.error(f"检测失败: {str(e)}")
+
+    def _calc_entropy(self, bits):
+        from collections import Counter
+        n = len(bits)
+        if n == 0:
+            return 0.0
+        counts = Counter(bits)
+        entropy = 0.0
+        for count in counts.values():
+            p = count / n
+            if p > 0:
+                entropy -= p * math.log2(p)
+        return entropy
+
+    # ========== 二维码解析 ==========
+    def browse_qr_file(self):
+        filename = filedialog.askopenfilename(title="选择图片", filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp"), ("All files", "*.*")])
+        if filename:
+            self.qr_file_entry.delete(0, END)
+            self.qr_file_entry.insert(0, filename)
+
+    def qr_from_clipboard(self):
+        try:
+            img = ImageGrab.grabclipboard()
+            if img is None:
+                messagebox.showwarning("提示", "剪贴板中没有图片")
+                return
+            temp_path = os.path.join(os.path.expanduser("~"), "temp_qr.png")
+            img.save(temp_path)
+            self.qr_file_entry.delete(0, END)
+            self.qr_file_entry.insert(0, temp_path)
+            self.logger.info("已从剪贴板读取图片")
+        except Exception as e:
+            self.logger.error(f"读取剪贴板失败: {str(e)}")
+
+    def qr_parse(self):
+        filepath = self.qr_file_entry.get()
+        if not filepath or not os.path.exists(filepath):
+            messagebox.showwarning("提示", "请选择有效的图片文件")
+            return
+        thread = threading.Thread(target=self._qr_parse_thread, args=(filepath,), daemon=True)
+        thread.start()
+
+    def _qr_parse_thread(self, filepath):
+        try:
+            self.logger.info(f"开始解析二维码: {os.path.basename(filepath)}")
+            img = cv2.imread(filepath)
+            results = decode(img)
+            if not results:
+                def no_result():
+                    self.qr_result_text.configure(state=NORMAL)
+                    self.qr_result_text.delete("1.0", END)
+                    self.qr_result_text.insert("1.0", "未检测到二维码")
+                    self.qr_result_text.configure(state=DISABLED)
+                self.root.after(0, no_result)
+                self.logger.info("未检测到二维码")
+                return
+
+            lines = []
+            for r in results:
+                data = r.data.decode("utf-8", errors="replace")
+                lines.append(f"类型: {r.type}")
+                lines.append(f"内容: {data}")
+                lines.append("")
+                if data.startswith("http://") or data.startswith("https://"):
+                    lines.append("── 安全检测 ──")
+                    real_url = self._follow_url(data)
+                    domain = urlparse(real_url).netloc
+                    lines.append(f"真实目标: {real_url}")
+                    lines.append(f"域名: {domain}")
+                    risk = self._check_domain_risk(domain, real_url)
+                    lines.append(f"风险等级: {risk}")
+                    if "危险" in risk or "可疑" in risk:
+                        lines.append("⚠️ 警告: 该链接存在安全风险，建议不要访问")
+                lines.append("─" * 40)
+
+            def update():
+                self.qr_result_text.configure(state=NORMAL)
+                self.qr_result_text.delete("1.0", END)
+                self.qr_result_text.insert("1.0", "\n".join(lines))
+                self.qr_result_text.configure(state=DISABLED)
+
+            self.root.after(0, update)
+            self.logger.info("二维码解析完成")
+        except Exception as e:
+            self.logger.error(f"解析失败: {str(e)}")
+
+    def _follow_url(self, url, depth=0):
+        if depth > 3:
+            return url
+        try:
+            import requests
+            resp = requests.head(url, allow_redirects=True, timeout=5)
+            return resp.url
+        except Exception:
+            return url
+
+    def _check_domain_risk(self, domain, url):
+        shorteners = ["t.cn", "bit.ly", "tinyurl.com", "goo.gl", "short.url", "dwz.cn", "is.gd"]
+        if any(s in domain for s in shorteners):
+            return "⚠️ 可疑（短链接服务）"
+        suspicious = ["login", "verify", "secure", "account", "update", "confirm"]
+        if any(s in domain.lower() for s in suspicious):
+            return "⚠️ 可疑（域名含敏感词）"
+        if "https" not in url:
+            return "🟡 低危（非 HTTPS）"
+        return "🟢 正常"
+
+    def qr_open_browser(self):
+        text = self.qr_result_text.get("1.0", END)
+        import re
+        urls = re.findall(r"https?://[^\s]+", text)
+        if urls:
+            import webbrowser
+            webbrowser.open(urls[0])
+        else:
+            messagebox.showwarning("提示", "未找到可打开的链接")
+
+    def qr_copy_content(self):
+        text = self.qr_result_text.get("1.0", END).strip()
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            self.logger.info("解析结果已复制到剪贴板")
+
+    # ========== 端口快照 ==========
+    def port_scan(self):
+        thread = threading.Thread(target=self._port_scan_thread, daemon=True)
+        thread.start()
+
+    def _port_scan_thread(self):
+        try:
+            self.logger.info("开始扫描本机端口...")
+            for item in self.port_tree.get_children():
+                self.port_tree.delete(item)
+
+            HIGH_RISK_PORTS = {135, 139, 445, 3389, 1433, 3306, 5432, 6379, 27017}
+            conns = psutil.net_connections(kind="inet")
+            seen = set()
+
+            for conn in conns:
+                if conn.status == "LISTEN" and conn.laddr:
+                    key = (conn.type.name, conn.laddr.ip, conn.laddr.port)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    proc_name = ""
+                    try:
+                        if conn.pid:
+                            proc_name = psutil.Process(conn.pid).name()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        proc_name = "N/A"
+                    tag = ""
+                    if conn.laddr.port in HIGH_RISK_PORTS:
+                        tag = "risk"
+                    self.port_tree.insert("", END, values=(conn.type.name, conn.laddr.ip, conn.laddr.port, conn.status, proc_name), tags=(tag,))
+
+            self.port_tree.tag_configure("risk", foreground="#EF4444")
+            self.logger.info(f"扫描完成，发现 {len(seen)} 个监听端口")
+        except Exception as e:
+            self.logger.error(f"端口扫描失败: {str(e)}")
+
+    def port_copy(self):
+        lines = []
+        for item in self.port_tree.get_children():
+            vals = self.port_tree.item(item, "values")
+            lines.append("\t".join(str(v) for v in vals))
+        text = "\n".join(lines)
+        if text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            self.logger.info("端口列表已复制到剪贴板")
+
+    def port_export(self):
+        filename = filedialog.asksaveasfilename(title="导出 CSV", defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+        if not filename:
+            return
+        try:
+            import csv
+            with open(filename, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["协议", "本地地址", "端口", "状态", "进程名"])
+                for item in self.port_tree.get_children():
+                    writer.writerow(self.port_tree.item(item, "values"))
+            self.logger.info(f"已导出至: {filename}")
+        except Exception as e:
+            self.logger.error(f"导出失败: {str(e)}")
+
+    # ========== 剪贴板哨兵 ==========
+    def clipboard_clear_manual(self):
+        try:
+            if ctypes.windll.user32.OpenClipboard(0):
+                ctypes.windll.user32.EmptyClipboard()
+                ctypes.windll.user32.CloseClipboard()
+                self.clip_preview.configure(state=NORMAL)
+                self.clip_preview.delete("1.0", END)
+                self.clip_preview.insert("1.0", "[已清空]")
+                self.clip_preview.configure(state=DISABLED)
+                self.logger.info("剪贴板已清空")
+        except Exception as e:
+            self.logger.error(f"清空剪贴板失败: {str(e)}")
+
+    def _on_clip_delay_change(self, value):
+        self.clip_delay_label.configure(text=f"{int(float(value))}")
+
+    def clipboard_toggle_auto(self):
+        if self.clip_auto.get():
+            self.logger.info(f"自动清理已启用，延迟 {self.clip_delay.get()} 秒")
+            self._clipboard_auto_loop()
+        else:
+            self.logger.info("自动清理已禁用")
+
+    def _clipboard_auto_loop(self):
+        if not self.clip_auto.get():
+            return
+        try:
+            text = pyperclip.paste()
+            if text and text != getattr(self, "_last_clipboard", ""):
+                self._last_clipboard = text
+                self._clip_timestamp = time.time()
+                preview = text[:200] + "..." if len(text) > 200 else text
+                self.clip_preview.configure(state=NORMAL)
+                self.clip_preview.delete("1.0", END)
+                self.clip_preview.insert("1.0", preview)
+                self.clip_preview.configure(state=DISABLED)
+            elif text and hasattr(self, "_clip_timestamp"):
+                elapsed = time.time() - self._clip_timestamp
+                if elapsed >= self.clip_delay.get():
+                    self.clipboard_clear_manual()
+                    self._clip_timestamp = time.time()
+        except Exception:
+            pass
+        self.root.after(1000, self._clipboard_auto_loop)
+
+    # ========== 文件粉碎 ==========
+    def browse_shred_file(self):
+        filename = filedialog.askopenfilename(title="选择文件")
+        if filename:
+            self.shred_path_entry.delete(0, END)
+            self.shred_path_entry.insert(0, filename)
+
+    def browse_shred_dir(self):
+        dirname = filedialog.askdirectory(title="选择文件夹")
+        if dirname:
+            self.shred_path_entry.delete(0, END)
+            self.shred_path_entry.insert(0, dirname)
+
+    def shred_execute(self):
+        path = self.shred_path_entry.get()
+        if not path or not os.path.exists(path):
+            messagebox.showwarning("提示", "请选择有效的文件或文件夹")
+            return
+        if not messagebox.askyesno("确认", "文件粉碎后将无法恢复，确定继续吗？"):
+            return
+        thread = threading.Thread(target=self._shred_thread, args=(path,), daemon=True)
+        thread.start()
+
+    def _shred_thread(self, path):
+        try:
+            files = []
+            if os.path.isfile(path):
+                files = [path]
+            elif os.path.isdir(path):
+                for root, dirs, filenames in os.walk(path):
+                    for fn in filenames:
+                        files.append(os.path.join(root, fn))
+                    if not self.shred_recursive.get():
+                        break
+
+            total = len(files)
+            self.shred_progress.configure(maximum=total, value=0)
+
+            for i, filepath in enumerate(files, 1):
+                self._shred_file(filepath)
+                self.root.after(0, lambda v=i: self.shred_progress.configure(value=v))
+                self.logger.info(f"已粉碎: {os.path.basename(filepath)}")
+
+            if os.path.isdir(path) and self.shred_recursive.get():
+                import shutil
+                shutil.rmtree(path, ignore_errors=True)
+
+            self.logger.info(f"粉碎完成，共处理 {total} 个文件")
+        except Exception as e:
+            self.logger.error(f"粉碎失败: {str(e)}")
+
+    def _shred_file(self, filepath):
+        size = os.path.getsize(filepath)
+        passes = self.shred_passes.get()
+        mode = self.shred_mode.get()
+        with open(filepath, "r+b") as f:
+            for _ in range(passes):
+                f.seek(0)
+                if mode == "random":
+                    data = os.urandom(min(size, 4096))
+                else:
+                    data = b"\x00" * min(size, 4096)
+                written = 0
+                while written < size:
+                    chunk = data[:min(len(data), size - written)]
+                    f.write(chunk)
+                    written += len(chunk)
+                f.flush()
+        os.remove(filepath)
 
 
 def main():

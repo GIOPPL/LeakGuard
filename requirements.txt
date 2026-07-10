@@ -15,18 +15,23 @@ beautifulsoup4~=4.12.3
 # GUI 主题库
 ttkbootstrap~=1.10.1
 
-# GUI 依赖 (tkinter 是 Python 标准库，不需要安装，部分 Linux 系统需要手动安装 python3-tk)
-# tkinter~=0.1.0; python_version < "3.10"
-# tkinter; python_version >= "3.10"
+# PDF 处理
+pypdf~=5.3.0
 
-# 日志处理增强 (如果需要更高级的日志功能)
-# logging~=0.4.9
+# 加密
+cryptography~=44.0.0
 
-# 并发处理 (标准库，但可以指定版本)
-# concurrent.futures~=3.0.0
+# 图像处理
+Pillow~=11.1.0
 
-# 哈希处理 (标准库)
-# hashlib~=3.0.0
+# 二维码解析
+pyzbar~=0.1.9
 
-# JSON 处理 (标准库)
-# json~=2.0.9
+# 计算机视觉
+opencv-python~=4.11.0
+
+# 系统信息
+psutil~=7.0.0
+
+# 剪贴板
+pyperclip~=1.9.0
