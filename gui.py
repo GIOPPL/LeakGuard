@@ -199,6 +199,15 @@ class LeakGuardGUI:
             else:
                 frame.pack_forget()
 
+        if key in ("email", "password"):
+            self.log_frame.pack(fill=BOTH, expand=True, pady=(15, 5))
+            self.action_bar.pack(fill=X, pady=5)
+            self.status_bar.pack(fill=X, pady=(5, 0))
+        else:
+            self.log_frame.pack_forget()
+            self.action_bar.pack_forget()
+            self.status_bar.pack_forget()
+
     def create_content_cards(self, parent):
         self.content_frames = {}
 
@@ -816,10 +825,10 @@ class LeakGuardGUI:
         return frame
 
     def create_log_area(self, parent):
-        log_frame = ttk.Labelframe(parent, text="📋 输出控制台", bootstyle="dark")
-        log_frame.pack(fill=BOTH, expand=True, pady=(15, 5))
+        self.log_frame = ttk.Labelframe(parent, text="📋 输出控制台", bootstyle="dark")
+        self.log_frame.pack(fill=BOTH, expand=True, pady=(15, 5))
 
-        text_frame = ttk.Frame(log_frame)
+        text_frame = ttk.Frame(self.log_frame)
         text_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
         self.output_text = tk.Text(text_frame, height=12, wrap=WORD, font=("Consolas", 10), state=DISABLED)
@@ -841,19 +850,19 @@ class LeakGuardGUI:
         self.output_text.configure(state=DISABLED)
 
     def create_action_bar(self, parent):
-        bar = ttk.Frame(parent)
-        bar.pack(fill=X, pady=5)
+        self.action_bar = ttk.Frame(parent)
+        self.action_bar.pack(fill=X, pady=5)
 
-        self.run_button = ttk.Button(bar, text="▶  开始检测", bootstyle="success", command=self.run_detection, width=15)
+        self.run_button = ttk.Button(self.action_bar, text="▶  开始检测", bootstyle="success", command=self.run_detection, width=15)
         self.run_button.pack(side=LEFT, padx=(0, 10))
 
-        self.stop_button = ttk.Button(bar, text="⏹  停止", bootstyle="danger", command=self.stop_detection, state=DISABLED, width=12)
+        self.stop_button = ttk.Button(self.action_bar, text="⏹  停止", bootstyle="danger", command=self.stop_detection, state=DISABLED, width=12)
         self.stop_button.pack(side=LEFT, padx=5)
 
-        self.progress = ttk.Progressbar(bar, mode="indeterminate", bootstyle="success")
+        self.progress = ttk.Progressbar(self.action_bar, mode="indeterminate", bootstyle="success")
         self.progress.pack(side=LEFT, fill=X, expand=True, padx=10)
 
-        ttk.Button(bar, text="🗑  清空日志", bootstyle="outline", command=self.clear_output).pack(side=RIGHT)
+        ttk.Button(self.action_bar, text="🗑  清空日志", bootstyle="outline", command=self.clear_output).pack(side=RIGHT)
 
     def create_status_bar(self, parent):
         self.status_bar = ttk.Frame(parent)
