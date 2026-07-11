@@ -4,5 +4,11 @@
     "SearchList" : [],
     "github_token": "",
     "search_types" : ["issues", "code","repositories"],
-    "Hunter_API_KEY": ""
+    "Hunter_API_KEY": "",
+    "deepseek": {
+        "api_key": "",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "temperature": 0.8
+    }
 }

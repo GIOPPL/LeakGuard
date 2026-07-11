@@ -13,11 +13,13 @@ import math
 import base64
 import ctypes
 import random
+import json
 from urllib.parse import urlparse
 
 from LeakGuard.email_leak import check_one_email, batch_process_emails_for
 from LeakGuard.pass_leak import check_pass_leak, batch_check_pass_leak
 from LeakGuard.utils import set_sensitiveWords, set_blacklistUsers, read_file
+from deepseek_client import DeepSeekClient
 
 from pypdf import PdfReader, PdfWriter
 from cryptography.fernet import Fernet
@@ -87,6 +89,10 @@ class LeakGuardGUI:
         self.running = False
         self.current_tab = "email"
         self.start_time = 0
+
+        # 加载 DeepSeek 配置
+        self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "config.json")
+        self.deepseek_config = self._load_deepseek_config()
 
         self.create_widgets()
 
@@ -346,6 +352,47 @@ class LeakGuardGUI:
 
         # 生成按钮
         ttk.Button(gen_inner, text="🎲 生成密码", bootstyle="info", command=self.generate_password, width=20).pack(pady=(5, 0))
+
+        # AI 智能密码优化卡片
+        ai_opt_card = ttk.Labelframe(frame, text="🤖 AI 智能密码优化", bootstyle="success")
+        ai_opt_card.pack(fill=X, pady=(15, 5))
+
+        ai_opt_inner = ttk.Frame(ai_opt_card)
+        ai_opt_inner.pack(fill=X, padx=15, pady=15)
+
+        ttk.Label(ai_opt_inner, text="输入密码风格或关键词（如：我的猫叫咪咪、公司缩写+生日）", font=("Microsoft YaHei", 10)).pack(anchor=W)
+        self.ai_opt_input = ttk.Entry(ai_opt_inner, font=("Microsoft YaHei", 10))
+        self.ai_opt_input.pack(fill=X, pady=(5, 0))
+        ttk.Button(ai_opt_inner, text="🔍 分析并优化", bootstyle="success", command=self._ai_optimize_password).pack(anchor=W, pady=(10, 0))
+
+        # AI 生成结果区域
+        self.ai_result_frame = ttk.Labelframe(ai_opt_inner, text="生成结果", bootstyle="success")
+        self.ai_result_frame.pack(fill=X, pady=(10, 0))
+        self.ai_result_frame.pack_forget()  # 初始隐藏
+
+        self.ai_password_vars = []
+        self.ai_password_entries = []
+        result_grid = ttk.Frame(self.ai_result_frame)
+        result_grid.pack(fill=X, padx=10, pady=10)
+
+        for row in range(5):
+            for col in range(2):
+                idx = row * 2 + col
+                cell = ttk.Frame(result_grid)
+                cell.grid(row=row, column=col, sticky=EW, padx=5, pady=3)
+                result_grid.columnconfigure(col, weight=1)
+
+                var = tk.StringVar()
+                self.ai_password_vars.append(var)
+                entry = ttk.Entry(cell, textvariable=var, font=("Consolas", 10), state="readonly")
+                entry.pack(side=LEFT, fill=X, expand=True)
+                self.ai_password_entries.append(entry)
+
+                ttk.Button(cell, text="📋", bootstyle="success-outline", command=lambda v=var: self._copy_ai_password(v), width=4).pack(side=LEFT, padx=(5, 0))
+
+        # AI 建议文本
+        self.ai_suggestion_label = ttk.Label(self.ai_result_frame, text="", font=("Microsoft YaHei", 9), foreground="#6c757d", wraplength=800)
+        self.ai_suggestion_label.pack(anchor=W, padx=10, pady=(0, 10))
 
         return frame
 
@@ -831,7 +878,108 @@ class LeakGuardGUI:
         self.sensitive_file_entry.pack(side=LEFT, fill=X, expand=True)
         ttk.Button(sw_row, text="浏览", bootstyle="secondary-outline", command=self.browse_sensitive_file).pack(side=LEFT, padx=(8, 0))
 
+        # DeepSeek AI 配置卡片
+        ai_card = ttk.Labelframe(frame, text="🤖 DeepSeek AI 配置", bootstyle="info")
+        ai_card.pack(fill=X, pady=5)
+
+        ai_inner = ttk.Frame(ai_card)
+        ai_inner.pack(fill=X, padx=15, pady=15)
+
+        # API Key
+        ttk.Label(ai_inner, text="API Key:").grid(row=0, column=0, sticky=W, pady=5)
+        api_key_row = ttk.Frame(ai_inner)
+        api_key_row.grid(row=0, column=1, sticky=EW, padx=(10, 0), pady=5)
+        ai_inner.columnconfigure(1, weight=1)
+        self.ai_api_key_entry = ttk.Entry(api_key_row, show="•")
+        self.ai_api_key_entry.pack(side=LEFT, fill=X, expand=True)
+        self.ai_api_key_visible = False
+        ttk.Button(api_key_row, text="👁", bootstyle="info-outline", command=self._toggle_ai_key_visibility, width=4).pack(side=LEFT, padx=(5, 0))
+
+        # Base URL
+        ttk.Label(ai_inner, text="API 地址:").grid(row=1, column=0, sticky=W, pady=5)
+        self.ai_base_url_entry = ttk.Entry(ai_inner)
+        self.ai_base_url_entry.grid(row=1, column=1, sticky=EW, padx=(10, 0), pady=5)
+
+        # 模型选择
+        ttk.Label(ai_inner, text="模型:").grid(row=2, column=0, sticky=W, pady=5)
+        self.ai_model_var = ttk.StringVar(value="deepseek-chat")
+        ai_model_combo = ttk.Combobox(ai_inner, textvariable=self.ai_model_var, values=["deepseek-chat", "deepseek-reasoner"], state="readonly")
+        ai_model_combo.grid(row=2, column=1, sticky=EW, padx=(10, 0), pady=5)
+
+        # 温度参数
+        ttk.Label(ai_inner, text="温度:").grid(row=3, column=0, sticky=W, pady=5)
+        temp_frame = ttk.Frame(ai_inner)
+        temp_frame.grid(row=3, column=1, sticky=EW, padx=(10, 0), pady=5)
+        self.ai_temp_var = tk.DoubleVar(value=0.8)
+        ttk.Scale(temp_frame, from_=0.5, to=1.0, variable=self.ai_temp_var, orient=HORIZONTAL, length=200).pack(side=LEFT)
+        self.ai_temp_label = ttk.Label(temp_frame, text="0.8", font=("Consolas", 10), width=4)
+        self.ai_temp_label.pack(side=LEFT, padx=(10, 0))
+        self.ai_temp_var.trace_add("write", lambda *args: self.ai_temp_label.configure(text=f"{self.ai_temp_var.get():.1f}"))
+
+        # 保存按钮
+        ttk.Button(ai_inner, text="💾 保存 AI 配置", bootstyle="info", command=self._save_deepseek_config_to_file).grid(row=4, column=0, columnspan=2, pady=(10, 0), sticky=W)
+
+        # 加载现有配置到界面
+        self._apply_deepseek_config_to_ui()
+
         return frame
+
+    def _load_deepseek_config(self):
+        """从 config.json 加载 DeepSeek 配置"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            return config.get("deepseek", {
+                "api_key": "",
+                "base_url": "https://api.deepseek.com",
+                "model": "deepseek-chat",
+                "temperature": 0.8
+            })
+        except Exception:
+            return {
+                "api_key": "",
+                "base_url": "https://api.deepseek.com",
+                "model": "deepseek-chat",
+                "temperature": 0.8
+            }
+
+    def _apply_deepseek_config_to_ui(self):
+        """将配置应用到设置页面 UI"""
+        cfg = self.deepseek_config
+        self.ai_api_key_entry.delete(0, END)
+        self.ai_api_key_entry.insert(0, cfg.get("api_key", ""))
+        self.ai_base_url_entry.delete(0, END)
+        self.ai_base_url_entry.insert(0, cfg.get("base_url", "https://api.deepseek.com"))
+        self.ai_model_var.set(cfg.get("model", "deepseek-chat"))
+        temp = cfg.get("temperature", 0.8)
+        self.ai_temp_var.set(temp)
+        self.ai_temp_label.configure(text=f"{temp:.1f}")
+
+    def _save_deepseek_config_to_file(self):
+        """保存 DeepSeek 配置到 config.json"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            config["deepseek"] = {
+                "api_key": self.ai_api_key_entry.get().strip(),
+                "base_url": self.ai_base_url_entry.get().strip() or "https://api.deepseek.com",
+                "model": self.ai_model_var.get(),
+                "temperature": round(self.ai_temp_var.get(), 1)
+            }
+
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+
+            self.deepseek_config = config["deepseek"]
+            messagebox.showinfo("提示", "DeepSeek AI 配置已保存")
+        except Exception as e:
+            messagebox.showerror("错误", f"保存配置失败: {str(e)}")
+
+    def _toggle_ai_key_visibility(self):
+        """切换 API Key 显示/隐藏"""
+        self.ai_api_key_visible = not self.ai_api_key_visible
+        self.ai_api_key_entry.configure(show="" if self.ai_api_key_visible else "•")
 
     def create_log_area(self, parent):
         self.log_frame = ttk.Labelframe(parent, text="📋 输出控制台", bootstyle="dark")
@@ -994,6 +1142,70 @@ class LeakGuardGUI:
 
     def copy_password(self):
         password = self.gen_password_entry.get()
+        if password:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(password)
+            self.root.update()
+            messagebox.showinfo("提示", "密码已复制到剪贴板")
+
+    def _ai_optimize_password(self):
+        """调用 DeepSeek AI 优化密码"""
+        user_input = self.ai_opt_input.get().strip()
+        if not user_input:
+            messagebox.showwarning("提示", "请输入密码风格或关键词")
+            return
+
+        api_key = self.deepseek_config.get("api_key", "")
+        if not api_key:
+            messagebox.showwarning("提示", "请先在设置中配置 DeepSeek API Key")
+            return
+
+        # 显示结果区域并清空旧数据
+        self.ai_result_frame.pack(fill=X, pady=(10, 0))
+        for var in self.ai_password_vars:
+            var.set("")
+        self.ai_suggestion_label.configure(text="")
+
+        self.logger.info("正在调用 DeepSeek AI 生成密码建议...")
+        thread = threading.Thread(target=self._ai_optimize_thread, args=(user_input,), daemon=True)
+        thread.start()
+
+    def _ai_optimize_thread(self, user_input):
+        """在后台线程中调用 DeepSeek API"""
+        try:
+            client = DeepSeekClient(
+                api_key=self.deepseek_config.get("api_key", ""),
+                base_url=self.deepseek_config.get("base_url", "https://api.deepseek.com"),
+                model=self.deepseek_config.get("model", "deepseek-chat"),
+                temperature=self.deepseek_config.get("temperature", 0.8)
+            )
+            result = client.optimize_password(user_input)
+            self.root.after(0, lambda: self._display_ai_passwords(result))
+        except Exception as e:
+            self.root.after(0, lambda: self._show_ai_error(str(e)))
+
+    def _display_ai_passwords(self, result):
+        """在界面上显示 AI 生成的密码"""
+        passwords = result.get("passwords", [])
+        for i, item in enumerate(passwords):
+            if i < len(self.ai_password_vars):
+                val = item.get("value", "")
+                self.ai_password_vars[i].set(val)
+
+        suggestion = result.get("suggestion", "")
+        if suggestion:
+            self.ai_suggestion_label.configure(text=f"💡 AI 建议：{suggestion}")
+
+        self.logger.info(f"AI 密码优化完成，生成 {len(passwords)} 组建议密码")
+
+    def _show_ai_error(self, error_msg):
+        """显示 AI 调用错误"""
+        self.logger.error(f"AI 调用失败: {error_msg}")
+        messagebox.showerror("AI 调用失败", error_msg)
+
+    def _copy_ai_password(self, var):
+        """复制 AI 生成的密码到剪贴板"""
+        password = var.get()
         if password:
             self.root.clipboard_clear()
             self.root.clipboard_append(password)
