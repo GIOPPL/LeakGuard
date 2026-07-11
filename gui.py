@@ -87,7 +87,7 @@ class LeakGuardGUI:
         self.logger = logging.getLogger(__name__)
 
         self.running = False
-        self.current_tab = "email"
+        self.current_tab = "shred"
         self.start_time = 0
 
         # 加载 DeepSeek 配置
@@ -998,7 +998,7 @@ class LeakGuardGUI:
         text_frame = ttk.Frame(self.log_frame)
         text_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
-        self.output_text = tk.Text(text_frame, height=12, wrap=WORD, font=("Consolas", 10), state=DISABLED)
+        self.output_text = tk.Text(text_frame, height=12, wrap=WORD, font=("Consolas", 12), state=DISABLED)
         scrollbar = ttk.Scrollbar(text_frame, command=self.output_text.yview)
         self.output_text.configure(yscrollcommand=scrollbar.set)
 
