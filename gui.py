@@ -87,7 +87,7 @@ class LeakGuardGUI:
         self.logger = logging.getLogger(__name__)
 
         self.running = False
-        self.current_tab = "shred"
+        self.current_tab = "email"
         self.start_time = 0
 
         # 加载 DeepSeek 配置
