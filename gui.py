@@ -157,6 +157,7 @@ class LeakGuardGUI:
         ttk.Separator(sidebar, bootstyle="secondary").pack(fill=X, padx=15, pady=10)
 
         tool_items = [
+            ("pass_tools", "🔑  密码工具"),
             ("pdf", "📄  PDF 加解密"),
             ("aes", "🔑  文本加解密"),
             ("stego", "🖼️  图片隐写检测"),
@@ -219,6 +220,7 @@ class LeakGuardGUI:
 
         self.content_frames["email"] = self.build_email_frame(parent)
         self.content_frames["password"] = self.build_password_frame(parent)
+        self.content_frames["pass_tools"] = self.build_password_tools_frame(parent)
         self.content_frames["pdf"] = self.build_pdf_frame(parent)
         self.content_frames["aes"] = self.build_aes_frame(parent)
         self.content_frames["stego"] = self.build_stego_frame(parent)
@@ -308,9 +310,25 @@ class LeakGuardGUI:
         self.pass_file_entry.pack(side=LEFT, fill=X, expand=True)
         ttk.Button(batch_inner, text="浏览", bootstyle="danger-outline", command=self.browse_pass_file).pack(side=LEFT, padx=(8, 0))
 
+        return frame
+
+    def toggle_pass_mode(self):
+        if self.pass_mode.get() == "single":
+            self.pass_batch_frame.pack_forget()
+            self.pass_single_frame.pack(fill=X, padx=15, pady=10)
+        else:
+            self.pass_single_frame.pack_forget()
+            self.pass_batch_frame.pack(fill=X, padx=15, pady=10)
+
+    def build_password_tools_frame(self, parent):
+        frame = ttk.Frame(parent)
+
+        ttk.Label(frame, text="🔑 密码工具箱", font=("Consolas", 18, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(frame, text="随机密码生成与 AI 智能优化", font=("Microsoft YaHei", 10), foreground="#6c757d").pack(anchor=W, pady=(0, 15))
+
         # 随机密码生成器卡片
         gen_card = ttk.Labelframe(frame, text="🔧 随机密码生成器", bootstyle="info")
-        gen_card.pack(fill=X, pady=(15, 5))
+        gen_card.pack(fill=X, pady=5)
 
         gen_inner = ttk.Frame(gen_card)
         gen_inner.pack(fill=X, padx=15, pady=15)
@@ -395,14 +413,6 @@ class LeakGuardGUI:
         self.ai_suggestion_label.pack(anchor=W, padx=10, pady=(0, 10))
 
         return frame
-
-    def toggle_pass_mode(self):
-        if self.pass_mode.get() == "single":
-            self.pass_batch_frame.pack_forget()
-            self.pass_single_frame.pack(fill=X, padx=15, pady=10)
-        else:
-            self.pass_single_frame.pack_forget()
-            self.pass_batch_frame.pack(fill=X, padx=15, pady=10)
 
     def build_google_frame(self, parent):
         frame = ttk.Frame(parent)
