@@ -1827,22 +1827,6 @@ class LeakGuardGUI:
             self.logger.error(f"粉碎失败: {str(e)}")
 
     def _shred_file(self, filepath):
-        size = os.path.getsize(filepath)
-        passes = self.shred_passes.get()
-        mode = self.shred_mode.get()
-        with open(filepath, "r+b") as f:
-            for _ in range(passes):
-                f.seek(0)
-                if mode == "random":
-                    data = os.urandom(min(size, 4096))
-                else:
-                    data = b"\x00" * min(size, 4096)
-                written = 0
-                while written < size:
-                    chunk = data[:min(len(data), size - written)]
-                    f.write(chunk)
-                    written += len(chunk)
-                f.flush()
         os.remove(filepath)
 
 
