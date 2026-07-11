@@ -22,6 +22,7 @@ from LeakGuard.utils import set_sensitiveWords, set_blacklistUsers, read_file
 from deepseek_client import DeepSeekClient
 
 from pypdf import PdfReader, PdfWriter
+from pypdf.constants import UserAccessPermissions
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -1348,20 +1349,23 @@ class LeakGuardGUI:
                 writer.add_page(page)
             open_pass = self.pdf_open_pass.get()
             perm_pass = self.pdf_perm_pass.get()
+            # 若用户未输入密码，使用默认空密码，保证界面上"可选"提示有效
             if not open_pass and not perm_pass:
-                self.logger.warning("未设置任何密码，跳过加密")
-                return
+                open_pass = ""
             kwargs = {}
             if open_pass:
                 kwargs["user_password"] = open_pass
             if perm_pass:
                 kwargs["owner_password"] = perm_pass
+            # 通过 permissions_flag 控制权限（pypdf 无 add_prohibition 方法）
+            permissions_flag = -4  # 默认允许所有权限
             if self.pdf_no_print.get():
-                writer.add_prohibition("printing")
+                permissions_flag &= ~UserAccessPermissions.PRINT.value
             if self.pdf_no_copy.get():
-                writer.add_prohibition("copying")
+                permissions_flag &= ~UserAccessPermissions.EXTRACT.value
             if self.pdf_no_edit.get():
-                writer.add_prohibition("modifying")
+                permissions_flag &= ~UserAccessPermissions.MODIFY.value
+            kwargs["permissions_flag"] = permissions_flag
             writer.encrypt(**kwargs)
             with open(outfile, "wb") as f:
                 writer.write(f)
@@ -1806,7 +1810,8 @@ class LeakGuardGUI:
                         break
 
             total = len(files)
-            self.shred_progress.configure(maximum=total, value=0)
+            # 进度条更新必须在主线程执行
+            self.root.after(0, lambda: self.shred_progress.configure(maximum=total, value=0))
 
             for i, filepath in enumerate(files, 1):
                 self._shred_file(filepath)
