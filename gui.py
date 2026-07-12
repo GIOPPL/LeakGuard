@@ -1825,24 +1825,41 @@ class LeakGuardGUI:
                         break
 
             total = len(files)
+            self.logger.info(f"待处理文件数: {total}")
+            for f in files:
+                self.logger.info(f"  - {f}")
+
             # 进度条更新必须在主线程执行
             self.root.after(0, lambda: self.shred_progress.configure(maximum=total, value=0))
 
             for i, filepath in enumerate(files, 1):
                 self._shred_file(filepath)
                 self.root.after(0, lambda v=i: self.shred_progress.configure(value=v))
-                self.logger.info(f"已粉碎: {os.path.basename(filepath)}")
 
             if os.path.isdir(path) and self.shred_recursive.get():
                 import shutil
                 shutil.rmtree(path, ignore_errors=True)
+                self.logger.info(f"已删除文件夹: {path}")
 
             self.logger.info(f"粉碎完成，共处理 {total} 个文件")
         except Exception as e:
             self.logger.error(f"粉碎失败: {str(e)}")
 
     def _shred_file(self, filepath):
-        os.remove(filepath)
+        try:
+            if not os.path.exists(filepath):
+                self.logger.warning(f"文件不存在，跳过: {filepath}")
+                return
+            self.logger.info(f"正在删除: {filepath}")
+            os.remove(filepath)
+            if os.path.exists(filepath):
+                self.logger.error(f"删除后文件仍存在: {filepath}")
+            else:
+                self.logger.info(f"删除成功: {os.path.basename(filepath)}")
+        except PermissionError as e:
+            self.logger.error(f"删除失败（文件被占用或无权限）: {filepath} - {e}")
+        except Exception as e:
+            self.logger.error(f"删除失败: {filepath} - {e}")
 
 
 def main():
