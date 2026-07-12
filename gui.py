@@ -207,12 +207,12 @@ class LeakGuardGUI:
             else:
                 frame.pack_forget()
 
+        # 日志区域在所有页面均可见，确保各功能操作反馈都能被用户看到
+        self.log_frame.pack(fill=BOTH, expand=True, pady=(15, 5))
         if key in ("email", "password"):
-            self.log_frame.pack(fill=BOTH, expand=True, pady=(15, 5))
             self.action_bar.pack(fill=X, pady=5)
             self.status_bar.pack(fill=X, pady=(5, 0))
         else:
-            self.log_frame.pack_forget()
             self.action_bar.pack_forget()
             self.status_bar.pack_forget()
 
