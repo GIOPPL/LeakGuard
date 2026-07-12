@@ -1352,9 +1352,9 @@ class LeakGuardGUI:
             # 若用户未输入密码，使用默认空密码，保证界面上"可选"提示有效
             if not open_pass and not perm_pass:
                 open_pass = ""
-            kwargs = {}
-            if open_pass:
-                kwargs["user_password"] = open_pass
+            kwargs = {
+                "user_password": open_pass if open_pass else "",
+            }
             if perm_pass:
                 kwargs["owner_password"] = perm_pass
             # 通过 permissions_flag 控制权限（pypdf 无 add_prohibition 方法）
