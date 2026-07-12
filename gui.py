@@ -1356,6 +1356,12 @@ class LeakGuardGUI:
 
     def _pdf_encrypt_thread(self, infile, outfile):
         try:
+            # 诊断信息：帮助定位"找不到文件"问题
+            self.logger.info(f"[诊断] CWD: {os.getcwd()}")
+            self.logger.info(f"[诊断] 可执行文件: {sys.executable}")
+            self.logger.info(f"[诊断] PyInstaller模式: {hasattr(sys, '_MEIPASS')}")
+            self.logger.info(f"[诊断] 输入文件: {infile}")
+            self.logger.info(f"[诊断] 输出文件: {outfile}")
             self.logger.info(f"开始加密 PDF: {os.path.basename(infile)}")
             reader = PdfReader(infile)
             writer = PdfWriter()
@@ -1854,6 +1860,11 @@ class LeakGuardGUI:
 
     def _shred_file(self, filepath):
         try:
+            # 诊断信息：帮助定位"删不掉"问题
+            self.logger.info(f"[诊断] CWD: {os.getcwd()}")
+            self.logger.info(f"[诊断] 可执行文件: {sys.executable}")
+            self.logger.info(f"[诊断] PyInstaller模式: {hasattr(sys, '_MEIPASS')}")
+            self.logger.info(f"[诊断] 目标文件: {filepath}")
             if not os.path.exists(filepath):
                 self.logger.warning(f"文件不存在，跳过: {filepath}")
                 return
