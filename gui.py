@@ -1860,10 +1860,11 @@ class LeakGuardGUI:
             self.logger.info(f"正在删除: {filepath}")
             file_size = os.path.getsize(filepath)
             self.logger.info(f"文件大小: {file_size} 字节")
-            # 直接使用 Windows cmd del 命令删除，路径含空格需用引号包裹
+            # 直接使用 Windows cmd del 命令删除，路径需转为反斜杠并用引号包裹
             import subprocess
+            winpath = os.path.normpath(filepath)
             result = subprocess.run(
-                f'cmd /c del /f /q "{filepath}"',
+                f'cmd /c del /f /q "{winpath}"',
                 shell=True, capture_output=True, text=True
             )
             self.logger.info(f"del 命令返回码: {result.returncode}")
