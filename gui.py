@@ -1002,7 +1002,7 @@ class LeakGuardGUI:
         text_frame = ttk.Frame(self.log_frame)
         text_frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
-        self.output_text = tk.Text(text_frame, height=12, wrap=WORD, font=("Consolas", 12), state=DISABLED)
+        self.output_text = tk.Text(text_frame, height=8, wrap=WORD, font=("Consolas", 12), state=DISABLED)
         scrollbar = ttk.Scrollbar(text_frame, command=self.output_text.yview)
         self.output_text.configure(yscrollcommand=scrollbar.set)
 
@@ -1372,7 +1372,8 @@ class LeakGuardGUI:
             writer.encrypt(**kwargs)
             with open(outfile, "wb") as f:
                 writer.write(f)
-            self.logger.info(f"加密完成，已保存至: {outfile}")
+            self.logger.info(f"加密完成，已保存至: {os.path.abspath(outfile)}")
+            self.root.after(0, lambda: os.startfile(os.path.dirname(os.path.abspath(outfile))))
         except Exception as e:
             self.logger.error(f"PDF 加密失败: {str(e)}")
 
@@ -1399,7 +1400,8 @@ class LeakGuardGUI:
                 writer.add_page(page)
             with open(outfile, "wb") as f:
                 writer.write(f)
-            self.logger.info(f"解密完成，已保存至: {outfile}")
+            self.logger.info(f"解密完成，已保存至: {os.path.abspath(outfile)}")
+            self.root.after(0, lambda: os.startfile(os.path.dirname(os.path.abspath(outfile))))
         except Exception as e:
             self.logger.error(f"PDF 解密失败: {str(e)}")
 
