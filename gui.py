@@ -1332,14 +1332,25 @@ class LeakGuardGUI:
             self.pdf_decrypt_file_entry.delete(0, END)
             self.pdf_decrypt_file_entry.insert(0, filename)
 
+    def _resolve_pdf_outfile(self, infile, outfile, suffix="_out.pdf"):
+        """解析输出文件路径：无路径时用原文件夹，无.pdf后缀时自动添加"""
+        if not outfile:
+            return infile.replace(".pdf", suffix)
+        # 仅输入文件名时，使用原文件所在目录
+        if not os.path.dirname(outfile):
+            outfile = os.path.join(os.path.dirname(infile), outfile)
+        # 自动补全 .pdf 后缀
+        if not outfile.lower().endswith(".pdf"):
+            outfile += ".pdf"
+        return outfile
+
     def pdf_process(self):
         infile = self.pdf_file_entry.get()
         if not infile or not os.path.exists(infile):
             messagebox.showwarning("提示", "请选择有效的 PDF 文件")
             return
         outfile = self.pdf_out_entry.get()
-        if not outfile:
-            outfile = infile.replace(".pdf", "_encrypted.pdf")
+        outfile = self._resolve_pdf_outfile(infile, outfile, "_encrypted.pdf")
         thread = threading.Thread(target=self._pdf_encrypt_thread, args=(infile, outfile), daemon=True)
         thread.start()
 
@@ -1383,8 +1394,7 @@ class LeakGuardGUI:
             messagebox.showwarning("提示", "请选择有效的 PDF 文件")
             return
         outfile = self.pdf_decrypt_out_entry.get()
-        if not outfile:
-            outfile = infile.replace(".pdf", "_decrypted.pdf")
+        outfile = self._resolve_pdf_outfile(infile, outfile, "_decrypted.pdf")
         thread = threading.Thread(target=self._pdf_decrypt_thread, args=(infile, outfile), daemon=True)
         thread.start()
 
