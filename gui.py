@@ -1856,14 +1856,25 @@ class LeakGuardGUI:
             self.logger.info(f"文件大小: {file_size} 字节")
             # 使用 os.unlink 删除（Windows 上更直接）
             os.unlink(filepath)
-            # 多重验证：exists + listdir + stat
+            # 多重验证：exists + listdir + stat + open
             exists = os.path.exists(filepath)
             dirname = os.path.dirname(filepath)
             basename = os.path.basename(filepath)
             in_dir = basename in os.listdir(dirname) if dirname else False
-            self.logger.info(f"unlink 后 exists={exists}, in_dir={in_dir}")
-            if exists or in_dir:
-                self.logger.warning(f"文件仍在，尝试强制删除: {filepath}")
+            try:
+                os.stat(filepath)
+                stat_ok = True
+            except FileNotFoundError:
+                stat_ok = False
+            try:
+                with open(filepath, "rb") as f:
+                    f.read(1)
+                open_ok = True
+            except FileNotFoundError:
+                open_ok = False
+            self.logger.info(f"unlink 后 exists={exists}, in_dir={in_dir}, stat_ok={stat_ok}, open_ok={open_ok}")
+            if exists or in_dir or stat_ok or open_ok:
+                self.logger.warning(f"文件仍可访问，尝试强制删除: {filepath}")
                 import subprocess
                 result = subprocess.run(
                     ["cmd", "/c", "del", "/f", "/q", filepath],
