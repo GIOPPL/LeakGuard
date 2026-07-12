@@ -1842,6 +1842,10 @@ class LeakGuardGUI:
                 self.logger.info(f"已删除文件夹: {path}")
 
             self.logger.info(f"粉碎完成，共处理 {total} 个文件")
+            # 打开文件夹供用户确认
+            folder = os.path.dirname(path) if os.path.isfile(path) else path
+            if os.path.isdir(folder):
+                self.root.after(0, lambda: os.startfile(folder))
         except Exception as e:
             self.logger.error(f"粉碎失败: {str(e)}")
 
