@@ -1860,15 +1860,15 @@ class LeakGuardGUI:
             self.logger.info(f"正在删除: {filepath}")
             file_size = os.path.getsize(filepath)
             self.logger.info(f"文件大小: {file_size} 字节")
-            # 直接使用 Windows cmd del 命令删除，比 os.unlink 更可靠
+            # 直接使用 Windows cmd del 命令删除，路径含空格需用引号包裹
             import subprocess
             result = subprocess.run(
-                ["cmd", "/c", "del", "/f", "/q", filepath],
-                capture_output=True, text=True
+                f'cmd /c del /f /q "{filepath}"',
+                shell=True, capture_output=True, text=True
             )
             self.logger.info(f"del 命令返回码: {result.returncode}")
             if result.stderr:
-                self.logger.warning(f"del 命令输出: {result.stderr}")
+                self.logger.warning(f"del 命令输出: {result.stderr.strip()}")
             # 验证删除结果
             if os.path.exists(filepath):
                 self.logger.error(f"删除后文件仍存在: {filepath}")
