@@ -1843,9 +1843,12 @@ class LeakGuardGUI:
 
             self.logger.info(f"粉碎完成，共处理 {total} 个文件")
             # 打开文件夹供用户确认
-            folder = os.path.dirname(path) if os.path.isfile(path) else path
-            if os.path.isdir(folder):
-                self.root.after(0, lambda: os.startfile(folder))
+            try:
+                folder = os.path.dirname(path) if os.path.isfile(path) else path
+                if os.path.isdir(folder):
+                    self.root.after(0, lambda: os.startfile(folder))
+            except Exception as e:
+                self.logger.warning(f"打开文件夹失败: {e}")
         except Exception as e:
             self.logger.error(f"粉碎失败: {str(e)}")
 
@@ -1855,45 +1858,22 @@ class LeakGuardGUI:
                 self.logger.warning(f"文件不存在，跳过: {filepath}")
                 return
             self.logger.info(f"正在删除: {filepath}")
-            # 先记录文件大小用于后续验证
             file_size = os.path.getsize(filepath)
             self.logger.info(f"文件大小: {file_size} 字节")
-            # 使用 os.unlink 删除（Windows 上更直接）
-            os.unlink(filepath)
-            # 多重验证：exists + listdir + stat + open
-            exists = os.path.exists(filepath)
-            dirname = os.path.dirname(filepath)
-            basename = os.path.basename(filepath)
-            in_dir = basename in os.listdir(dirname) if dirname else False
-            try:
-                os.stat(filepath)
-                stat_ok = True
-            except FileNotFoundError:
-                stat_ok = False
-            try:
-                with open(filepath, "rb") as f:
-                    f.read(1)
-                open_ok = True
-            except FileNotFoundError:
-                open_ok = False
-            self.logger.info(f"unlink 后 exists={exists}, in_dir={in_dir}, stat_ok={stat_ok}, open_ok={open_ok}")
-            if exists or in_dir or stat_ok or open_ok:
-                self.logger.warning(f"文件仍可访问，尝试强制删除: {filepath}")
-                import subprocess
-                result = subprocess.run(
-                    ["cmd", "/c", "del", "/f", "/q", filepath],
-                    capture_output=True, text=True
-                )
-                self.logger.info(f"强制删除返回码: {result.returncode}, stderr: {result.stderr}")
-                # 再次验证
-                if os.path.exists(filepath):
-                    self.logger.error(f"强制删除后文件仍存在: {filepath}")
-                else:
-                    self.logger.info(f"强制删除成功: {basename}")
+            # 直接使用 Windows cmd del 命令删除，比 os.unlink 更可靠
+            import subprocess
+            result = subprocess.run(
+                ["cmd", "/c", "del", "/f", "/q", filepath],
+                capture_output=True, text=True
+            )
+            self.logger.info(f"del 命令返回码: {result.returncode}")
+            if result.stderr:
+                self.logger.warning(f"del 命令输出: {result.stderr}")
+            # 验证删除结果
+            if os.path.exists(filepath):
+                self.logger.error(f"删除后文件仍存在: {filepath}")
             else:
-                self.logger.info(f"删除成功: {basename}")
-        except PermissionError as e:
-            self.logger.error(f"删除失败（文件被占用或无权限）: {filepath} - {e}")
+                self.logger.info(f"删除成功: {os.path.basename(filepath)}")
         except Exception as e:
             self.logger.error(f"删除失败: {filepath} - {e}")
 
